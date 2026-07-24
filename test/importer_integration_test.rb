@@ -86,6 +86,20 @@ class ImporterIntegrationTest < Minitest::Test
     assert_match(/Destination-only tables found: comments/, error.message)
   end
 
+  def test_discover_tables_excludes_internal_tables
+    Source.connection.create_table(:schema_migrations, id: false) { |t| t.string :version }
+    Source.connection.create_table(:ar_internal_metadata, id: false) { |t| t.string :key }
+    Source.connection.create_table(:users) { |t| t.string :name }
+    Target.connection.create_table(:schema_migrations, id: false) { |t| t.string :version }
+    Target.connection.create_table(:ar_internal_metadata, id: false) { |t| t.string :key }
+    Target.connection.create_table(:users) { |t| t.string :name }
+
+    importer = build_importer
+    importer.send(:discover_tables!)
+
+    assert_equal ["users"], importer.send(:tables)
+  end
+
   def test_verify_table_sets_raises_when_no_tables_exist
     importer = build_importer(ignore_source_only: true)
     importer.send(:discover_tables!)
@@ -116,6 +130,17 @@ class ImporterIntegrationTest < Minitest::Test
 
     importer = build_importer
     assert_nil importer.send(:migration_version, Source.connection)
+  end
+
+  def test_verify_migration_versions_reports_unknown_for_missing_table
+    Source.connection.create_table(:schema_migrations, id: false) { |t| t.string :version }
+    Source.connection.execute("INSERT INTO schema_migrations (version) VALUES ('20240101000000')")
+
+    importer = build_importer
+    error = assert_raises(RuntimeError) { importer.send(:verify_migration_versions!) }
+
+    assert_match(/source: 20240101000000/, error.message)
+    assert_match(/destination: unknown/, error.message)
   end
 
   def test_migration_version_returns_max_version
@@ -279,6 +304,22 @@ class ImporterIntegrationTest < Minitest::Test
     assert_match(/Destination must be empty before import \(users=1\)/, error.message)
   end
 
+  def test_verify_target_is_empty_lists_all_populated_tables
+    Source.connection.create_table(:users) { |t| t.string :name }
+    Source.connection.create_table(:posts) { |t| t.string :title }
+    Target.connection.create_table(:users) { |t| t.string :name }
+    Target.connection.create_table(:posts) { |t| t.string :title }
+    Target.connection.execute("INSERT INTO users (name) VALUES ('a')")
+    Target.connection.execute("INSERT INTO posts (title) VALUES ('b')")
+
+    importer = build_importer
+    importer.send(:discover_tables!)
+
+    error = assert_raises(RuntimeError) { importer.send(:verify_target_is_empty!) }
+    assert_match(/users=1/, error.message)
+    assert_match(/posts=1/, error.message)
+  end
+
   def test_clear_target_removes_existing_rows
     Source.connection.create_table(:users) { |t| t.string :name }
     Target.connection.create_table(:users) { |t| t.string :name }
@@ -302,6 +343,19 @@ class ImporterIntegrationTest < Minitest::Test
     importer.send(:reset_target_sequences!)
 
     assert_nil Target.connection.select_value("SELECT seq FROM sqlite_sequence WHERE name = 'users'")
+  end
+
+  def test_reset_target_sequences_is_noop_without_sqlite_sequence_table
+    Target.connection.create_table(:events, id: false) { |t| t.string :name }
+
+    importer = build_importer
+    importer.instance_variable_set(:@tables, ["events"])
+
+    importer.send(:reset_target_sequences!)
+
+    assert_nil Target.connection.select_value(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sqlite_sequence'"
+    )
   end
 
   private
