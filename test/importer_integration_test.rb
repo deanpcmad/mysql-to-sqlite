@@ -145,6 +145,57 @@ class ImporterIntegrationTest < Minitest::Test
     assert_match(/users: 5 row\(s\)/, output.string)
   end
 
+  def test_copy_table_falls_back_to_first_column_when_no_primary_key
+    Source.connection.create_table(:events, id: false) do |t|
+      t.string :name
+      t.integer :position
+    end
+    Target.connection.create_table(:events, id: false) do |t|
+      t.string :name
+      t.integer :position
+    end
+    Source.connection.execute("INSERT INTO events (name, position) VALUES ('a', 1)")
+    Source.connection.execute("INSERT INTO events (name, position) VALUES ('b', 2)")
+
+    importer = build_importer(output: StringIO.new)
+    importer.send(:discover_tables!)
+    importer.send(:copy_table, "events")
+
+    assert_equal 2, Target.connection.select_value("SELECT COUNT(*) FROM events").to_i
+    assert_equal ["a", "b"],
+      Target.connection.select_all("SELECT name FROM events ORDER BY position").to_a.map { |row| row["name"] }
+  end
+
+  def test_copy_table_with_no_rows_reports_zero
+    Source.connection.create_table(:users) { |t| t.string :name }
+    Target.connection.create_table(:users) { |t| t.string :name }
+
+    output = StringIO.new
+    importer = build_importer(output: output)
+    importer.send(:discover_tables!)
+    importer.send(:copy_table, "users")
+
+    assert_equal 0, Target.connection.select_value("SELECT COUNT(*) FROM users").to_i
+    assert_match(/users: 0 row\(s\)/, output.string)
+    refute_match(/copied/, output.string)
+  end
+
+  def test_copy_table_stops_cleanly_when_row_count_is_exact_multiple_of_batch_size
+    Source.connection.create_table(:users) { |t| t.string :name }
+    Target.connection.create_table(:users) { |t| t.string :name }
+    4.times { |i| Source.connection.execute("INSERT INTO users (name) VALUES ('user#{i}')") }
+
+    output = StringIO.new
+    importer = build_importer(batch_size: 2, output: output)
+    importer.send(:discover_tables!)
+    importer.send(:copy_table, "users")
+
+    assert_equal 4, Target.connection.select_value("SELECT COUNT(*) FROM users").to_i
+    assert_match(/users: copied 2/, output.string)
+    assert_match(/users: copied 4/, output.string)
+    assert_match(/users: 4 row\(s\)/, output.string)
+  end
+
   def test_validate_passes_after_full_copy_and_checks_sequences
     Source.connection.create_table(:users) { |t| t.string :name }
     Target.connection.create_table(:users) { |t| t.string :name }
