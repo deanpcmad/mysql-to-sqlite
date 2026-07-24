@@ -5,7 +5,7 @@ Gem::Specification.new do |spec|
   spec.description = "A schema-aware MySQL-to-SQLite data importer built on Active Record."
   spec.authors = ["Dean"]
   spec.license = "MIT"
-  spec.required_ruby_version = ">= 3.2"
+  spec.required_ruby_version = ">= 3.3"
 
   spec.files = Dir["bin/*", "lib/**/*.rb", "README.md", "LICENSE.txt"]
   spec.bindir = "bin"

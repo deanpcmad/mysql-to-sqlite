@@ -2,9 +2,9 @@
 
 [![CI](https://github.com/deanpcmad/mysql-to-sqlite/actions/workflows/ci.yml/badge.svg)](https://github.com/deanpcmad/mysql-to-sqlite/actions/workflows/ci.yml)
 
-A standalone, schema-aware copier extracted from Invoicer. It copies raw table data
-from MySQL to an existing SQLite database through Active Record, without loading an
-application's models or running callbacks.
+A standalone, schema-aware copier that copies raw table data from MySQL to an existing
+SQLite database through Active Record, without loading an application's models or
+running callbacks.
 
 The source and destination must have matching table columns and the same maximum
 `schema_migrations.version`. The importer refuses a non-empty destination by default,
@@ -12,11 +12,46 @@ copies in batches, and validates row counts, foreign keys, and integer sequences
 
 ## Install
 
+### Requirements
+
+- Ruby 3.3 or newer
+- MySQL or MariaDB client libraries and development headers, required by `mysql2`
+- SQLite libraries and development headers, required by `sqlite3`
+
+The package names vary by operating system. Install the development packages provided
+by your system package manager before installing the gem.
+
+### Install the command
+
+Install the published gem for standalone use:
+
 ```sh
-bundle install
+gem install mysql-to-sqlite
 ```
 
-The MySQL client development library must be available when Bundler installs `mysql2`.
+Confirm that the command is available:
+
+```sh
+mysql-to-sqlite --version
+mysql-to-sqlite --help
+```
+
+### Add it to an application
+
+Add the gem to the application's development dependencies:
+
+```ruby
+group :development do
+  gem "mysql-to-sqlite"
+end
+```
+
+Install the bundle and run the command through Bundler:
+
+```sh
+bundle install
+bundle exec mysql-to-sqlite --help
+```
 
 ## Use
 
@@ -24,14 +59,15 @@ First create or migrate an empty SQLite database to exactly the schema version r
 in MySQL. Then run:
 
 ```sh
-bundle exec bin/mysql-to-sqlite \
+mysql-to-sqlite \
   --source 'mysql2://user:password@127.0.0.1/database' \
   --destination /absolute/path/to/database.sqlite3 \
   --yes
 ```
 
 The URLs may instead be supplied as `MYSQL_SOURCE_URL` and
-`SQLITE_DATABASE_PATH`. Run `bundle exec bin/mysql-to-sqlite --help` for all options.
+`SQLITE_DATABASE_PATH`. Run `mysql-to-sqlite --help` for all options, or prefix the
+command with `bundle exec` when it is installed through an application's bundle.
 
 `--replace` deletes records from matching destination tables before copying.
 `--ignore-source-only` skips tables found only in MySQL; use it only after inspecting
