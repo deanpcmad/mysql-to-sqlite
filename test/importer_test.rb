@@ -15,6 +15,16 @@ class ImporterTest < Minitest::Test
     assert_equal "batch size must be positive", error.message
   end
 
+  def test_rejects_non_numeric_batch_size
+    assert_raises(ArgumentError) do
+      MysqlToSqlite::Importer.new(
+        source_url: "mysql2://localhost/source",
+        destination: "target.sqlite3",
+        batch_size: "not-a-number"
+      )
+    end
+  end
+
   def test_accepts_numeric_batch_size
     importer = MysqlToSqlite::Importer.new(
       source_url: "mysql2://localhost/source",
