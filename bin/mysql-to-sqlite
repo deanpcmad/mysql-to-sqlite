@@ -1,0 +1,41 @@
+#!/usr/bin/env ruby
+
+require "optparse"
+
+options = {
+  batch_size: ENV.fetch("IMPORT_BATCH_SIZE", 1_000),
+  destination: ENV["SQLITE_DATABASE_PATH"],
+  source_url: ENV["MYSQL_SOURCE_URL"]
+}
+
+parser = OptionParser.new do |opts|
+  opts.banner = "Usage: mysql-to-sqlite --source MYSQL_URL --destination FILE --yes"
+  opts.on("--source URL", "MySQL URL (or MYSQL_SOURCE_URL)") { |url| options[:source_url] = url }
+  opts.on("--destination FILE", "Existing SQLite database (or SQLITE_DATABASE_PATH)") { |file| options[:destination] = file }
+  opts.on("--batch-size N", Integer, "Rows copied per batch") { |size| options[:batch_size] = size }
+  opts.on("--ignore-source-only", "Skip tables that exist only in MySQL") { options[:ignore_source_only] = true }
+  opts.on("--replace", "Clear destination records before importing") { options[:replace] = true }
+  opts.on("--yes", "Confirm the import") { options[:confirmed] = true }
+  opts.on("-v", "--version", "Show version") do
+    require_relative "../lib/mysql_to_sqlite/version"
+    puts MysqlToSqlite::VERSION
+    exit
+  end
+  opts.on("-h", "--help", "Show this help") do
+    puts opts
+    exit
+  end
+end
+parser.parse!
+
+abort "Pass --source or set MYSQL_SOURCE_URL" if options[:source_url].to_s.empty?
+abort "Pass --destination or set SQLITE_DATABASE_PATH" if options[:destination].to_s.empty?
+abort "Destination does not exist: #{options[:destination]}" unless File.file?(options[:destination])
+abort "Pass --yes after verifying the destination path and backups" unless options[:confirmed]
+
+require_relative "../lib/mysql_to_sqlite"
+
+puts "Importing MySQL data into #{File.expand_path(options[:destination])}"
+MysqlToSqlite::Importer.new(**options.slice(
+  :source_url, :destination, :batch_size, :ignore_source_only, :replace
+)).run!
