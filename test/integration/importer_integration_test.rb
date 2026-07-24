@@ -100,6 +100,42 @@ class MysqlDumpIntegrationTest < Minitest::Test
     assert_includes error.message, "20260725000000"
   end
 
+  def test_copies_a_realistic_multi_table_invoicing_dataset
+    restore_mysql_dump("invoicing.sql")
+    create_sqlite_database(invoicing_schema)
+    output = StringIO.new
+
+    importer(output: output).run!
+
+    database = SQLite3::Database.new(@sqlite_file.path)
+    database.results_as_hash = true
+
+    assert_equal 5, database.get_first_value("SELECT COUNT(*) FROM customers")
+    assert_equal 8, database.get_first_value("SELECT COUNT(*) FROM invoices")
+    assert_equal 15, database.get_first_value("SELECT COUNT(*) FROM invoice_line_items")
+    assert_equal 4, database.get_first_value("SELECT COUNT(*) FROM quotes")
+    assert_equal 6, database.get_first_value("SELECT COUNT(*) FROM emails")
+
+    paid_invoice = database.execute("SELECT * FROM invoices WHERE invoice_number = 'INV-1005'").first
+    assert_equal "paid", paid_invoice["status"]
+    assert_in_delta 1249.98, paid_invoice["total"].to_f, 0.001
+
+    draft_invoice = database.execute("SELECT * FROM invoices WHERE invoice_number = 'INV-1003'").first
+    assert_nil draft_invoice["due_at"]
+    assert_nil draft_invoice["notes"]
+
+    customer = database.execute("SELECT * FROM customers WHERE email = 'renee@example.com'").first
+    assert_equal "Renée Dubois", customer["name"]
+    assert_nil database.execute("SELECT * FROM customers WHERE email = 'liang@example.com'").first["phone"]
+
+    welcome_email = database.execute("SELECT * FROM emails WHERE subject = 'Welcome aboard'").first
+    assert_nil welcome_email["invoice_id"]
+
+    assert_includes output.string, "Import completed successfully."
+  ensure
+    database&.close
+  end
+
   def test_refuses_column_mismatches
     restore_mysql_dump("source_only.sql")
     create_sqlite_database(simple_schema.sub("name TEXT NOT NULL", "display_name TEXT NOT NULL"))
@@ -181,6 +217,59 @@ class MysqlDumpIntegrationTest < Minitest::Test
         body TEXT,
         published_at DATETIME,
         FOREIGN KEY (author_id) REFERENCES authors(id)
+      );
+    SQL
+  end
+
+  def invoicing_schema
+    schema_migrations + <<~SQL
+      PRAGMA foreign_keys = ON;
+      CREATE TABLE customers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        email TEXT NOT NULL,
+        phone TEXT,
+        created_at DATETIME NOT NULL
+      );
+      CREATE TABLE invoices (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        customer_id INTEGER NOT NULL,
+        invoice_number TEXT NOT NULL,
+        status TEXT NOT NULL,
+        subtotal DECIMAL NOT NULL,
+        tax DECIMAL NOT NULL,
+        total DECIMAL NOT NULL,
+        issued_on DATE NOT NULL,
+        due_at DATETIME,
+        notes TEXT,
+        FOREIGN KEY (customer_id) REFERENCES customers(id)
+      );
+      CREATE TABLE invoice_line_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        invoice_id INTEGER NOT NULL,
+        description TEXT NOT NULL,
+        quantity INTEGER NOT NULL,
+        unit_price DECIMAL NOT NULL,
+        FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+      );
+      CREATE TABLE quotes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        customer_id INTEGER NOT NULL,
+        quote_number TEXT NOT NULL,
+        status TEXT NOT NULL,
+        total DECIMAL NOT NULL,
+        expires_on DATE,
+        FOREIGN KEY (customer_id) REFERENCES customers(id)
+      );
+      CREATE TABLE emails (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        customer_id INTEGER NOT NULL,
+        invoice_id INTEGER,
+        subject TEXT NOT NULL,
+        sent_at DATETIME NOT NULL,
+        body TEXT,
+        FOREIGN KEY (customer_id) REFERENCES customers(id),
+        FOREIGN KEY (invoice_id) REFERENCES invoices(id)
       );
     SQL
   end

@@ -1,6 +1,11 @@
 -- MySQL dump whose migration version deliberately differs from the SQLite fixture.
 
 SET FOREIGN_KEY_CHECKS=0;
+DROP TABLE IF EXISTS `emails`;
+DROP TABLE IF EXISTS `quotes`;
+DROP TABLE IF EXISTS `invoice_line_items`;
+DROP TABLE IF EXISTS `invoices`;
+DROP TABLE IF EXISTS `customers`;
 DROP TABLE IF EXISTS `posts`;
 DROP TABLE IF EXISTS `legacy_events`;
 DROP TABLE IF EXISTS `authors`;

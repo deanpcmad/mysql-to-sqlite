@@ -2,6 +2,11 @@
 -- A representative relational dataset with nulls, Unicode, booleans and binary data.
 
 SET FOREIGN_KEY_CHECKS=0;
+DROP TABLE IF EXISTS `emails`;
+DROP TABLE IF EXISTS `quotes`;
+DROP TABLE IF EXISTS `invoice_line_items`;
+DROP TABLE IF EXISTS `invoices`;
+DROP TABLE IF EXISTS `customers`;
 DROP TABLE IF EXISTS `legacy_events`;
 DROP TABLE IF EXISTS `posts`;
 DROP TABLE IF EXISTS `authors`;
