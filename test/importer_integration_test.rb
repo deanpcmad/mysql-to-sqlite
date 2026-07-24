@@ -157,6 +157,51 @@ class ImporterIntegrationTest < Minitest::Test
     importer.send(:validate!)
   end
 
+  def test_validate_raises_on_foreign_key_violations
+    Source.connection.create_table(:authors) { |t| t.string :name }
+    Source.connection.create_table(:posts) { |t| t.integer :author_id }
+    Source.connection.execute("INSERT INTO authors (name) VALUES ('Ada')")
+    Source.connection.execute("INSERT INTO posts (author_id) VALUES (1)")
+
+    Target.connection.create_table(:authors) { |t| t.string :name }
+    Target.connection.create_table(:posts) { |t| t.integer :author_id }
+    Target.connection.add_foreign_key(:posts, :authors)
+    Target.connection.execute("PRAGMA foreign_keys = OFF")
+    Target.connection.execute("INSERT INTO authors (name) VALUES ('Ada')")
+    Target.connection.execute("INSERT INTO posts (author_id) VALUES (999)")
+
+    importer = build_importer
+    importer.send(:discover_tables!)
+
+    error = assert_raises(RuntimeError) { importer.send(:validate!) }
+    assert_match(/Foreign-key validation failed/, error.message)
+  end
+
+  def test_validate_sequences_raises_on_mismatch
+    Source.connection.create_table(:users) { |t| t.string :name }
+    Target.connection.create_table(:users) { |t| t.string :name }
+    Source.connection.execute("INSERT INTO users (name) VALUES ('a')")
+    Target.connection.execute("INSERT INTO users (name) VALUES ('a')")
+    Target.connection.execute("INSERT INTO users (name) VALUES ('b')")
+    Target.connection.execute("DELETE FROM users WHERE name = 'b'")
+
+    importer = build_importer
+    importer.send(:discover_tables!)
+
+    error = assert_raises(RuntimeError) { importer.send(:validate_sequences!) }
+    assert_match(/Sequence validation failed for users/, error.message)
+  end
+
+  def test_without_target_foreign_keys_restores_pragma_after_error
+    importer = build_importer
+
+    assert_raises(RuntimeError) do
+      importer.send(:without_target_foreign_keys) { raise "boom" }
+    end
+
+    assert_equal 1, Target.connection.select_value("PRAGMA foreign_keys")
+  end
+
   def test_validate_raises_on_row_count_mismatch
     Source.connection.create_table(:users) { |t| t.string :name }
     Target.connection.create_table(:users) { |t| t.string :name }
