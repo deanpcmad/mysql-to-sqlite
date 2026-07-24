@@ -9,6 +9,8 @@ class ImporterIntegrationTest < Minitest::Test
   Source = MysqlToSqlite::Importer::SourceRecord
   Target = MysqlToSqlite::Importer::TargetRecord
 
+  FakeConnection = Struct.new(:adapter_name)
+
   def setup
     Source.establish_connection(adapter: "sqlite3", database: ":memory:")
     Target.establish_connection(adapter: "sqlite3", database: ":memory:")
@@ -17,6 +19,22 @@ class ImporterIntegrationTest < Minitest::Test
   def teardown
     Source.connection_pool.disconnect!
     Target.connection_pool.disconnect!
+  end
+
+  def test_verify_databases_raises_when_source_is_not_mysql
+    importer = build_importer
+
+    error = assert_raises(ArgumentError) { importer.send(:verify_databases!) }
+    assert_equal "source URL must use the mysql2 adapter", error.message
+  end
+
+  def test_verify_databases_raises_when_target_is_not_sqlite
+    importer = build_importer
+    importer.instance_variable_set(:@source, FakeConnection.new("Mysql2"))
+    importer.instance_variable_set(:@target, FakeConnection.new("PostgreSQL"))
+
+    error = assert_raises(RuntimeError) { importer.send(:verify_databases!) }
+    assert_equal "The destination database must use SQLite", error.message
   end
 
   def test_discover_tables_intersects_and_sorts_source_and_target_tables
