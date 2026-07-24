@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    strategy:
+      fail-fast: false
+      matrix:
+        ruby-version: ["3.3", "3.4", "4.0"]
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: mysql_to_sqlite_test
+          MYSQL_ROOT_PASSWORD: test-password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost -ptest-password"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+
+    env:
+      MYSQL_TEST_URL: mysql2://root:test-password@127.0.0.1:3306/mysql_to_sqlite_test
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby-version }}
+          bundler-cache: true
+
+      - name: Run tests
+        run: bundle exec rake test

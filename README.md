@@ -1,5 +1,7 @@
 # mysql-to-sqlite
 
+[![CI](https://github.com/deanpcmad/mysql-to-sqlite/actions/workflows/ci.yml/badge.svg)](https://github.com/deanpcmad/mysql-to-sqlite/actions/workflows/ci.yml)
+
 A standalone, schema-aware copier extracted from Invoicer. It copies raw table data
 from MySQL to an existing SQLite database through Active Record, without loading an
 application's models or running callbacks.
