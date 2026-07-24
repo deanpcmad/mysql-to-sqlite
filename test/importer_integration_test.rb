@@ -11,6 +11,19 @@ class ImporterIntegrationTest < Minitest::Test
 
   FakeConnection = Struct.new(:adapter_name)
 
+  # run! normally calls connect! (a live MySQL connection) and verify_databases!
+  # (rejects non-MySQL/SQLite adapters). This subclass swaps both for the
+  # already-established SQLite Source/Target connections so the full run!
+  # orchestration can be exercised end to end.
+  class TestableImporter < MysqlToSqlite::Importer
+    def connect!
+      @source = SourceRecord.connection
+      @target = TargetRecord.connection
+    end
+
+    def verify_databases!; end
+  end
+
   def setup
     Source.establish_connection(adapter: "sqlite3", database: ":memory:")
     Target.establish_connection(adapter: "sqlite3", database: ":memory:")
@@ -356,6 +369,29 @@ class ImporterIntegrationTest < Minitest::Test
     assert_nil Target.connection.select_value(
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sqlite_sequence'"
     )
+  end
+
+  def test_run_executes_full_import_flow_end_to_end
+    Source.connection.create_table(:schema_migrations, id: false) { |t| t.string :version }
+    Target.connection.create_table(:schema_migrations, id: false) { |t| t.string :version }
+    Source.connection.execute("INSERT INTO schema_migrations (version) VALUES ('20240101000000')")
+    Target.connection.execute("INSERT INTO schema_migrations (version) VALUES ('20240101000000')")
+    Source.connection.create_table(:users) { |t| t.string :name }
+    Target.connection.create_table(:users) { |t| t.string :name }
+    3.times { |i| Source.connection.execute("INSERT INTO users (name) VALUES ('user#{i}')") }
+
+    output = StringIO.new
+    importer = TestableImporter.new(
+      source_url: "mysql2://localhost/source",
+      destination: "target.sqlite3",
+      output: output
+    )
+
+    importer.run!
+
+    assert_match(/Tables to copy: users/, output.string)
+    assert_match(/users: 3 row\(s\)/, output.string)
+    assert_includes output.string, "Import completed successfully."
   end
 
   private
